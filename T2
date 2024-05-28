@@ -1,0 +1,82 @@
+import requests
+import jwt
+import datetime
+
+# Jira API endpoint and credentials
+jira_base_url = 'https://your-jira-instance.atlassian.net'
+issue_key = 'PROJECT-123'  # Replace with your actual issue key
+client_id = 'your_client_id'  # OAuth client ID
+client_secret = 'your_client_secret'  # OAuth client secret
+
+# Proxy details
+proxy_url = 'http://your-proxy-server:proxy-port'
+proxy_username = 'your_proxy_username'
+proxy_password = 'your_proxy_password'
+
+# OAuth token endpoint
+token_url = f'{jira_base_url}/oauth/token'
+
+# Set up proxy with authentication
+proxies = {
+    'http': f'http://{proxy_username}:{proxy_password}@{proxy_url}',
+    'https': f'http://{proxy_username}:{proxy_password}@{proxy_url}'
+}
+
+def generate_jwt(client_id, client_secret):
+    # JWT headers
+    headers = {
+        'alg': 'HS256',
+        'typ': 'JWT'
+    }
+
+    # JWT payload
+    payload = {
+        'iss': client_id,
+        'sub': client_id,
+        'aud': token_url,
+        'exp': datetime.datetime.utcnow() + datetime.timedelta(minutes=5),
+        'iat': datetime.datetime.utcnow()
+    }
+
+    # Encode JWT
+    token = jwt.encode(payload, client_secret, algorithm='HS256', headers=headers)
+    return token
+
+def get_access_token(token_url, jwt_token, proxies):
+    auth_response = requests.post(
+        token_url,
+        headers={'Authorization': f'Bearer {jwt_token}', 'Content-Type': 'application/x-www-form-urlencoded'},
+        data={'grant_type': 'client_credentials'},
+        proxies=proxies
+    )
+
+    if auth_response.status_code == 200:
+        return auth_response.json().get('access_token')
+    else:
+        raise Exception(f'Failed to obtain access token: {auth_response.status_code}, {auth_response.text}')
+
+# Generate JWT
+jwt_token = generate_jwt(client_id, client_secret)
+
+# Get access token using the generated JWT
+access_token = get_access_token(token_url, jwt_token, proxies)
+
+# Prepare the API endpoint URL to get issue details
+issue_url = f'{jira_base_url}/rest/api/2/issue/{issue_key}'
+
+# Set up headers with the access token
+headers = {
+    'Authorization': f'Bearer {access_token}',
+    'Content-Type': 'application/json'
+}
+
+# Make the GET request to fetch the issue details
+response = requests.get(issue_url, headers=headers, proxies=proxies)
+
+# Check if the request was successful
+if response.status_code == 200:
+    issue_data = response.json()
+    issue_id = issue_data['id']
+    print(f'Issue ID: {issue_id}')
+else:
+    print(f'Failed to retrieve issue details. Status code: {response.status_code}, Response: {response.text}')
