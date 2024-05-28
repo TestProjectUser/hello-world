@@ -1,0 +1,62 @@
+import org.apache.http.HttpHost;
+import org.apache.http.HttpResponse;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.CredentialsProvider;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.client.ProxyClient;
+import org.apache.http.impl.conn.DefaultProxyRoutePlanner;
+import org.apache.http.util.EntityUtils;
+
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
+public class JiraClient {
+    private static final String JIRA_URL = "https://your-jira-instance.atlassian.net";
+    private static final String API_KEY = "your-api-key";
+    private static final String USERNAME = "your-username";
+    private static final String PROXY_HOST = "your-proxy-host";
+    private static final int PROXY_PORT = 8080; // Change to your proxy port
+
+    public static void main(String[] args) throws IOException {
+        String issueKey = "PROJECT-123"; // Replace with your issue key
+        String issue = getIssue(issueKey);
+        System.out.println(issue);
+    }
+
+    public static String getIssue(String issueKey) throws IOException {
+        // Create the HTTP client with proxy
+        CredentialsProvider credsProvider = new BasicCredentialsProvider();
+        credsProvider.setCredentials(
+                new AuthScope(PROXY_HOST, PROXY_PORT),
+                new UsernamePasswordCredentials(USERNAME, "your-password"));
+
+        HttpHost proxy = new HttpHost(PROXY_HOST, PROXY_PORT);
+        DefaultProxyRoutePlanner routePlanner = new DefaultProxyRoutePlanner(proxy);
+
+        try (CloseableHttpClient httpClient = HttpClients.custom()
+                .setDefaultCredentialsProvider(credsProvider)
+                .setRoutePlanner(routePlanner)
+                .build()) {
+
+            // Create the HTTP GET request
+            String url = JIRA_URL + "/rest/api/2/issue/" + issueKey;
+            HttpGet request = new HttpGet(url);
+            String auth = USERNAME + ":" + API_KEY;
+            String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
+            request.setHeader("Authorization", "Basic " + encodedAuth);
+
+            // Execute the request
+            HttpResponse response = httpClient.execute(request);
+            if (response.getStatusLine().getStatusCode() == 200) {
+                return EntityUtils.toString(response.getEntity());
+            } else {
+                throw new RuntimeException("Failed to fetch issue: " + response.getStatusLine());
+            }
+        }
+    }
+}
