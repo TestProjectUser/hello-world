@@ -1,0 +1,87 @@
+import org.apache.http.HttpHost;
+import org.apache.http.auth.AuthScope;
+import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.CredentialsProvider;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpGet;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.BasicCredentialsProvider;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.apache.http.impl.conn.DefaultProxyRoutePlanner;
+import org.apache.http.message.BasicNameValuePair;
+import org.apache.http.util.EntityUtils;
+import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
+
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+
+public class JiraApiClient {
+
+    public static void main(String[] args) throws IOException {
+        String jiraBaseUrl = "https://your-jira-instance.atlassian.net";
+        String clientId = "your_client_id";
+        String clientSecret = "your_client_secret";
+        String proxyUrl = "your-proxy-server";
+        int proxyPort = 8080;
+        String proxyUsername = "your_proxy_username";
+        String proxyPassword = "your_proxy_password";
+        String issueKey = "PROJECT-123"; // Replace with your actual issue key
+
+        // Set up proxy authentication
+        CredentialsProvider credsProvider = new BasicCredentialsProvider();
+        credsProvider.setCredentials(
+                new AuthScope(proxyUrl, proxyPort),
+                new UsernamePasswordCredentials(proxyUsername, proxyPassword));
+
+        HttpHost proxy = new HttpHost(proxyUrl, proxyPort);
+        DefaultProxyRoutePlanner routePlanner = new DefaultProxyRoutePlanner(proxy);
+
+        try (CloseableHttpClient httpClient = HttpClients.custom()
+                .setDefaultCredentialsProvider(credsProvider)
+                .setRoutePlanner(routePlanner)
+                .build()) {
+
+            // Step 1: Obtain OAuth 2.0 token
+            String tokenUrl = jiraBaseUrl + "/oauth/token";
+            HttpPost httpPost = new HttpPost(tokenUrl);
+            List<BasicNameValuePair> params = new ArrayList<>();
+            params.add(new BasicNameValuePair("grant_type", "client_credentials"));
+            params.add(new BasicNameValuePair("client_id", clientId));
+            params.add(new BasicNameValuePair("client_secret", clientSecret));
+            httpPost.setEntity(new StringEntity(new UrlEncodedFormEntity(params).toString()));
+
+            try (CloseableHttpResponse tokenResponse = httpClient.execute(httpPost)) {
+                if (tokenResponse.getStatusLine().getStatusCode() == 200) {
+                    String tokenResponseBody = EntityUtils.toString(tokenResponse.getEntity());
+                    JsonObject tokenData = JsonParser.parseString(tokenResponseBody).getAsJsonObject();
+                    String accessToken = tokenData.get("access_token").getAsString();
+
+                    // Step 2: Use the token to get the issue details
+                    String issueUrl = jiraBaseUrl + "/rest/api/2/issue/" + issueKey;
+                    HttpGet httpGet = new HttpGet(issueUrl);
+                    httpGet.setHeader("Authorization", "Bearer " + accessToken);
+                    httpGet.setHeader("Accept", "application/json");
+
+                    try (CloseableHttpResponse issueResponse = httpClient.execute(httpGet)) {
+                        if (issueResponse.getStatusLine().getStatusCode() == 200) {
+                            String issueResponseBody = EntityUtils.toString(issueResponse.getEntity());
+                            JsonObject issueData = JsonParser.parseString(issueResponseBody).getAsJsonObject();
+                            String issueId = issueData.get("id").getAsString();
+                            System.out.println("Issue ID: " + issueId);
+                        } else {
+                            System.out.println("Failed to retrieve issue details. Status code: " + issueResponse.getStatusLine().getStatusCode());
+                            System.out.println("Response: " + EntityUtils.toString(issueResponse.getEntity()));
+                        }
+                    }
+                } else {
+                    System.out.println("Failed to obtain access token. Status code: " + tokenResponse.getStatusLine().getStatusCode());
+                    System.out.println("Response: " + EntityUtils.toString(tokenResponse.getEntity()));
+                }
+            }
+        }
+    }
+}
